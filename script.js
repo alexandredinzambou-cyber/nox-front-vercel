@@ -65,15 +65,19 @@ async function authVerify(rawCode){
     if(btn){btn.disabled=false;btn.textContent='Se connecter';}
   }
 }
-/* Vérification de session : au chargement ET périodiquement (durée consommée ?). */
+/* Vérification de session : au chargement ET périodiquement (durée consommée ?).
+   L'auth est servie par nox-server (Railway) via le rewrite /api/auth/* (vercel.json,
+   émulé en local par dev-server.js). */
 async function authCheck(){
   let code='';try{code=localStorage.getItem(AUTH_KEY)||'';}catch(e){}
   try{
     const r=await fetch(authFetchUrl('/api/auth/check?code='+encodeURIComponent(code)),{signal:AbortSignal.timeout(15000)});
-    /* Route absente / serveur absent (front statique découplé, ex : Vercel +
-       addon FrenchStream indépendant) : on déverrouille pour ne pas bloquer
-       l'accès au contenu. Un vrai serveur d'auth répond toujours 200. */
-    if(!r.ok){authUnlock();return true;}
+    if(r.status===404){
+      /* Rewrite /api/auth absent (déploiement front pas encore à jour) : on
+         déverrouille pour ne pas bloquer l'accès au contenu. */
+      authUnlock();return true;
+    }
+    if(!r.ok)throw new Error('http '+r.status);
     const d=await r.json().catch(()=>({ok:false,reason:'error'}));
     if(d&&d.ok){authUnlock();return true;}
     /* Erreur réseau (serveur injoignable) : on NE touche PAS à la session
@@ -81,18 +85,14 @@ async function authCheck(){
     if(d&&d.reason==='error')return false;
     /* Refus définitif du serveur : si un code était mémorisé → écran
        « contacter l'admin » ; sinon (première visite) → écran de saisie. */
-    /* (Chemins conservés : une réintégration ultérieure d'un backend d'auth
-       refonctionnera sans modification du front.) */
     try{localStorage.removeItem(AUTH_KEY);}catch(e){}
     if(code)authFail(d.reason==='expired'?'Ton code d\'accès a expiré.':'Ton code d\'accès n\'est plus valide.');
     else authShow('authStepLogin');
     return false;
   }catch(e){
-    /* Échec réseau / route absente (front découplé du serveur d'auth
-       Content-Nexora) : le portail est informatif — on déverrouille pour ne
-       pas bloquer l'accès au contenu. */
-    authUnlock();
-    return true;
+    /* Échec réseau (timeout, DNS…) : on NE déverrouille PAS — un serveur
+       d'auth actif doit valider la session avant d'ouvrir le contenu. */
+    return false;
   }
 }
 /* Déconnexion : ferme la session CÔTÉ SERVEUR (sinon /api/auth/check

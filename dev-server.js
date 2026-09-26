@@ -11,6 +11,7 @@ const ROOT = __dirname;
 
 /* Mêmes règles que vercel.json. */
 const REWRITES = [
+  { re: /^\/api\/auth\/(.*)$/, to: 'https://nox-server-production.up.railway.app/api/auth/$1' },
   { re: /^\/api\/fs\/(.*)$/, to: 'https://noxcontent-production.up.railway.app/$1' },
   { re: /^\/api\/anime\/(.*)$/, to: 'https://anime-api-production-e95c.up.railway.app/$1' },
   { re: /^\/api\/drama\/health$/, to: 'https://drama-api-production-8ed6.up.railway.app/api/health' },

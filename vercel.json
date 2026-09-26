@@ -1,6 +1,7 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "rewrites": [
+    { "source": "/api/auth/(.*)", "destination": "https://nox-server-production.up.railway.app/api/auth/$1" },
     { "source": "/api/fs/(.*)", "destination": "https://noxcontent-production.up.railway.app/$1" },
     { "source": "/api/anime/(.*)", "destination": "https://anime-api-production-e95c.up.railway.app/$1" },
     { "source": "/api/drama/health", "destination": "https://drama-api-production-8ed6.up.railway.app/api/health" },
