@@ -160,11 +160,17 @@ C.push(
  {id:23,t:'Helios',y:2023,k:'film',g:['Drame','SF'],m:133,d:'La dernière mission solaire emporte un passager clandestin : le concepteur du vaisseau.',a:['Anton Vega','Julia Marr']},
  {id:24,t:'Éclipse',y:2025,k:'serie',g:['Fantastique','Romance'],m:2,d:'Ils ne peuvent se rencontrer que durant les 4 minutes d\'une éclipse.',a:['Ava Morin','Silas Brandt']}
 );
-/* Affiches : URL directes (addon FS, metahub Cinemeta), repli picsum. */
+/* Affiches : URL directes (addon FS, metahub Cinemeta), repli SVG inline. */
+/* Placeholder inline (SVG data-URI, dégradé + initiale) : aucun appel réseau.
+   picsum.photos est bloqué depuis certaines connexions (ERR_CONNECTION_TIMED_OUT). */
+const imgPh=(seed,w,h)=>{const x=byId(seed);const name=String(x&&x.t||seed).trim();
+  const init=(name.split(/\s+/).slice(0,2).map(s=>s[0]||'').join('')||'▦').toUpperCase();
+  const g1=(String(seed).length*47)%360,g2=(g1+70)%360;
+  return 'data:image/svg+xml,'+encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}"><defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="hsl(${g1},45%,22%)"/><stop offset="1" stop-color="hsl(${g2},55%,13%)"/></linearGradient></defs><rect width="100%" height="100%" fill="url(#g)"/><text x="50%" y="52%" fill="rgba(255,255,255,.55)" font-family="sans-serif" font-weight="700" font-size="${Math.round(h/5)}" text-anchor="middle" dominant-baseline="middle">${init}</text></svg>`);};
 const img=(id,w,h)=>{const x=byId(id);
   if(x&&x.p)return x.p;
   if(x&&x.b)return x.b;
-  return `https://picsum.photos/seed/nox${id}/${w}/${h}`;};
+  return imgPh(id,w,h);};
 const imgBg=id=>{const x=byId(id);return x&&x.b?x.b:img(id,1920,1080);};
 /* Tolérant aux ids : numérique (films/séries/animés) ou chaîne Mongo (dramas). */
 const byId=id=>C.find(x=>x.id==id);

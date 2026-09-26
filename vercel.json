@@ -1,7 +1,10 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "rewrites": [
-    { "source": "/api/fs/(.*)", "destination": "https://noxcontent-production.up.railway.app/$1" }
+    { "source": "/api/fs/(.*)", "destination": "https://noxcontent-production.up.railway.app/$1" },
+    { "source": "/api/anime/(.*)", "destination": "https://anime-api-production-e95c.up.railway.app/$1" },
+    { "source": "/api/drama/health", "destination": "https://drama-api-production-8ed6.up.railway.app/api/health" },
+    { "source": "/api/drama/(.*)", "destination": "https://drama-api-production-8ed6.up.railway.app/api/v1/reelshort/$1" }
   ],
   "headers": [
     {
