@@ -174,7 +174,9 @@ const img=(id,w,h)=>{const x=byId(id);
 const imgBg=id=>{const x=byId(id);return x&&x.b?x.b:img(id,1920,1080);};
 /* Tolérant aux ids : numérique (films/séries/animés) ou chaîne Mongo (dramas). */
 const byId=id=>C.find(x=>x.id==id);
-const dur=x=>!x.m?'—':x.k==='serie'?`${x.m} saison${x.m>1?'s':''}`:`${Math.floor(x.m/60)} h ${String(x.m%60).padStart(2,'0')} min`;
+const dur=x=>!x.m?(x.k==='serie'&&x.saison?`Saison ${x.saison}`:'—')
+  :x.k==='serie'?`${x.m} saison${x.m>1?'s':''}`
+  :`${Math.floor(x.m/60)} h ${String(x.m%60).padStart(2,'0')} min`;
 /* ---- Réglages de lecture (page Profil) — helpers globaux ----
    Persistés dans localStorage (nox_settings). Définis ici en haut de fichier
    pour être utilisables partout (hero, lecteur, compte à rebours…). */
@@ -195,7 +197,7 @@ const isNewRelease=x=>{
   return String(x.y)===String(new Date().getFullYear());
 };
 const CARD=(x,o={})=>`<article class="card" data-id="${x.id}">
-  <div class="card-poster">${isNewRelease(x)?'<span class="badge-new">Nouveau</span>':''}<img loading="lazy" src="${img(x.id,400,600)}" alt="${x.t}" onerror="noxFallbackPoster(this)"><div class="card-tint"></div>
+  <div class="card-poster">${isNewRelease(x)?'<span class="badge-new">Nouveau</span>':''}${x.k==='serie'&&x.saison?`<span class="badge-new" style="left:auto;right:.5rem;background:linear-gradient(135deg,#3A7BD5,#2456A6)">S${x.saison}</span>`:''}<img loading="lazy" src="${img(x.id,400,600)}" alt="${x.t}" onerror="noxFallbackPoster(this)"><div class="card-tint"></div>
     <button class="btn-play" aria-label="Lire ${x.t}"><svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg></button>
     <div class="card-info"><span class="match">94 %</span> <span class="card-meta" style="display:inline">${x.y||'—'} • ${dur(x)}</span>
     <div style="display:flex;gap:.35rem;margin-top:.45rem;flex-wrap:wrap">${(x.g||[]).slice(0,2).map(g=>`<span class="chip">${g}</span>`).join('')}</div></div>
@@ -651,8 +653,10 @@ async function catLiveSearch(viewKey,qRaw){
       const hits=catRemoteHits[viewKey];hits.clear();
       items.forEach(x=>hits.add(x.id));
     }
-    if(fresh.length){
-      C.push(...fresh);
+    if(fresh.length)C.push(...fresh);
+    /* Re-rendu SYSTÉMATIQUE quand il y a des hits (même sans nouveaux titres) :
+      sinon une 2e recherche identique n'afficherait rien de nouveau. */
+    if(items.length||fresh.length){
       renderCatGenres();renderCat();
       fsBackfillYears();          /* fiches (année, affiches) en arrière-plan */
     }
@@ -914,9 +918,12 @@ function nxMapNodeItem(r,k){
     const ym=title.match(/\s*\((\d{4})\)\s*$/);
     if(ym){title=title.slice(0,ym.index).trim();}
     const ses=fsSeasonOf(title);
-    return {id:String(r.id),fsId,t:ses?ses.base:title,saison:ses?ses.s:null,
-      y:ri?+ri[1]:(ym?+ym[1]:0),k,rd:'',g:frGenres(r.genre),m:0,
-      d:'',a:[],p:poster,b:null,note:0,pop:0};
+    /* Libellé qualité des metas FS : « HD - VF+VOSTFR » → repli de synopsis. */
+    const tClean=ses?ses.base:title;
+    const quality=typeof r.description==='string'&&/HD|FHD|4K|CAM/i.test(r.description)?r.description:'';
+    return {id:String(r.id),fsId,t:tClean,saison:ses?ses.s:null,
+      quality,y:ri?+ri[1]:(ym?+ym[1]:0),k,rd:'',g:frGenres(r.genre),m:0,
+      d:quality||'',a:[],p:poster,b:null,note:0,pop:0};
   }
   /* Item Cinemeta (« Voir plus » / recherche) : fiche complète, id tt. */
   const id=/^tt\d+$/.test(String(r.id||''))?r.id:0;
@@ -2361,9 +2368,9 @@ function startLiveStream(streams,idx,item){
   document.getElementById('plBig').style.display=isIframe?'none':'';
   document.getElementById('plBack10').style.visibility=isIframe?'hidden':'';
   document.getElementById('plFwd10').style.visibility=isIframe?'hidden':'';
-  // ── BOUTON OUVERTURE ONGLET : afficher si iframe, masquer si HLS ──
+  // ── BOUTON OUVERTURE ONGLET : toujours disponible (embed OU flux direct) ──
   const openTabBtn=document.getElementById('plOpenTab');
-  if(openTabBtn)openTabBtn.style.display=isIframe?'':'none';
+  if(openTabBtn)openTabBtn.style.display='';
   if(isIframe){
     /* Page HTML / lecteur distant : iframe plein écran (jamais via le proxy vidéo).
        Un watchdog bascule sur la source suivante si la page est bloquée (XFO/CSP) ou vide.
@@ -2545,32 +2552,19 @@ document.getElementById('plFull').onclick=()=>{
 function plUpdateOpenTabBtn(){
   const btn=document.getElementById('plOpenTab');
   if(!btn)return;
-  const isIframe=plState.mode==='live'&&plState.streams&&plState.streams.length&&nxIsEmbedStream(plState.streams[plState.streamIdx]);
-  btn.style.display=isIframe?'':'none';
+  /* Visible dès qu'il y a au moins un flux (embed ou direct). */
+  btn.style.display=(plState.streams&&plState.streams.length)?'':'none';
 }
 document.getElementById('plOpenTab').onclick=()=>{
-  // Ouvre un flux dans un nouvel onglet — fonctionne en mode live (iframe)
-  // et en mode sim (avec sources embed disponibles)
+  // Ouvre le flux COURANT dans un nouvel onglet (tous types : embed, HLS, mp4)
+  // via la mini-page lecteur blob ; en mode sim, la première source disponible.
   const curMode=plState?plState.mode:null;
   if(curMode!=='live'&&curMode!=='sim'){showToast('Aucun flux à ouvrir');return;}
   const curStreams=plState&&plState.streams||[];
   if(!curStreams.length){showToast('Aucun flux à ouvrir');return;}
-  // En mode live : prendre le flux courant ; en mode sim : prendre le premier embed
-  let s=null;
-  if(curMode==='live'&&plState) s=plState.streams[plState.streamIdx];
-  else s=curStreams.find(s=>nxIsEmbedStream(s))||curStreams[0];
+  const s=(curMode==='live'&&plState.streamIdx>=0)?plState.streams[plState.streamIdx]:curStreams[0];
   if(!s||!s.url){showToast('Aucune URL disponible');return;}
-  if(nxIsEmbedStream(s)){
-    const url=s.url;
-    if(url){
-      const a=document.createElement('a');
-      a.href=url;a.target='_blank';a.rel='noopener';
-      a.click();
-      showToast('Ouverture dans nouvel onglet…');
-    }
-  }else{
-    showToast('Ce flux nécessite le player NOX — utilisez l\'iframe ou copiez l\'URL dans la section Sources');
-  }
+  plOpenStreamInTab(s);
   plResetHide();
 };
 function seekFromEvent(e){
@@ -2641,6 +2635,35 @@ function plSourcesCollapse(){
   plSourcesEl.classList.toggle('folded',folded);
   bindSourcesToggle();
 }
+/* Ouverture d'un flux dans un nouvel onglet (vers la page externe) : les flux
+   HLS/MP4 ne s'ouvrent pas directement (type MIME) — ils sont encaspulés dans
+   une mini-page de lecteur générée à la volée (blob URL) ; les embeds s'ouvrent
+   tels quels. */
+function plOpenStreamInTab(stream){
+  if(!stream||!stream.url){showToast('Aucune URL disponible');return;}
+  const url=String(stream.url);
+  if(!/^https?:/i.test(url)){showToast('URL de flux non ouvrable');return;}
+  if(nxIsEmbedStream(stream)){
+    window.open(url,'_blank','noopener');
+    showToast('Lecteur distant ouvert dans un nouvel onglet');
+    return;
+  }
+  const isHls=/\.m3u8(?:[?#]|$)/i.test(url)||stream.type==='hls';
+  const title=(plState.item&&plState.item.t)||'Lecture';
+  const html='<!DOCTYPE html><html lang="fr"><head><meta charset="UTF-8"><title>'+title.replace(/[<>&"]/g,' ')+'</title>'+
+    '<style>html,body{margin:0;height:100%;background:#000;color:#fff;font-family:sans-serif}'+
+    'video{width:100%;height:100%;object-fit:contain}p{position:fixed;top:10px;left:12px;font-size:13px;opacity:.6}</style>'+
+    (isHls?'<script src="https://cdn.jsdelivr.net/npm/hls.js@1"><\/script>':'')+
+    '</head><body><video controls autoplay playsinline></video><p>'+title.replace(/[<>&"]/g,' ')+'</p><script>'+
+    'var v=document.querySelector("video");var u='+JSON.stringify(url)+';'+
+    (isHls?'if(Hls.isSupported()){var h=new Hls({fragLoadingTimeOut:60000,fragLoadingMaxRetry:8});h.loadSource(u);h.attachMedia(v);}'+
+     'else if(v.canPlayType("application/vnd.apple.mpegurl")){v.src=u;}else{document.body.innerHTML="HLS non supporté";}'
+     :'v.src=u;')+
+    '<\/script></body></html>';
+  const blob=new Blob([html],{type:'text/html'});
+  window.open(URL.createObjectURL(blob),'_blank','noopener');
+  showToast('Flux ouvert dans un nouvel onglet');
+}
 function renderSources(){
   const L=plState.streams||[];
   if(plState.searching){
@@ -2666,22 +2689,18 @@ function renderSources(){
           <b>${on?'● ':''}${s.providerName||s.provider||'Source'}</b>
           <span>${plSourceLabel(s)}${isEmbed?' • Lecteur distant':''}</span>
         </button>
-        ${isEmbed?'<button class="pl-open-tab-src pl-mini" data-i="'+i+'" title="Ouvrir dans nouvel onglet"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg></button>':''}
+        <button class="pl-open-tab-src pl-mini" data-i="${i}" title="Ouvrir ce flux dans un nouvel onglet" aria-label="Ouvrir ce flux dans un nouvel onglet"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg></button>
       </div>`;
     }).join('')+
     retryBtn;
   plSourcesEl.querySelectorAll('.pl-src').forEach(b=>b.onclick=()=>{hideSources();startLiveStream(plState.streams,+b.dataset.i,plState.item);});
   plSourcesEl.querySelectorAll('.pl-src-retry').forEach(b=>b.onclick=()=>{hideSources();plSearchStreams();});
   bindSourcesToggle();
-  // Bouton ouvrir dans onglet pour chaque source embed
-  plSourcesEl.querySelectorAll('.pl-open-tab-src').forEach(b=>b.onclick=()=>{
-    hideSources();
-    const idx=+b.dataset.i, s=plState.streams[idx];
-    if(!s||!s.url){showToast('Aucune URL disponible');return;}
-    const a=document.createElement('a');
-    a.href=s.url;a.target='_blank';a.rel='noopener';
-    a.click();
-    showToast('Ouverture dans nouvel onglet…');
+  /* Bouton ouvrir dans onglet : DISPONIBLE SUR CHAQUE source (embed ou direct). */
+  plSourcesEl.querySelectorAll('.pl-open-tab-src').forEach(b=>b.onclick=e=>{
+    e.stopPropagation();
+    const s=plState.streams[+b.dataset.i];
+    plOpenStreamInTab(s);
   });
 }
 function showSources(){renderSources();plSourcesEl.classList.add('show');}
